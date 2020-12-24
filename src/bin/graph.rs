@@ -11,7 +11,7 @@ use osmpbfreader::{
 use petgraph::{
     algo::astar,
     graph::{EdgeReference, NodeIndex, UnGraph},
-    visit::{Dfs, EdgeRef},
+    visit::EdgeRef,
 };
 use smartstring::alias::String;
 use structopt::StructOpt;
@@ -58,22 +58,25 @@ fn main() -> Result<()> {
 
     let edge_cost = |edge_ref: EdgeReference<_>| {
         let aid = map
-            .osm_id_by_vertex
-            .get(&edge_ref.source())
-            .and_then(|osm_id| osm_id.node())
-            .and_then(|node_id| map.nodes.get(&node_id));
+            .obj_by_idx(edge_ref.source())
+            .and_then(|obj| obj.node().cloned());
         let bid = map
-            .osm_id_by_vertex
-            .get(&edge_ref.source())
-            .and_then(|osm_id| osm_id.node())
-            .and_then(|node_id| map.nodes.get(&node_id));
-        if let Some((a, b)) = aid.zip(bid) {
+            .obj_by_idx(edge_ref.target())
+            .and_then(|obj| obj.node().cloned());
+        let cost = if let Some((a, b)) = aid.zip(bid) {
             // Technically, we should be calculating these on a spheroid… but this will do for now, I guess.
             let sq_dist = (a.lat() - b.lat()).powf(2.0) + (a.lon() - b.lon()).powf(2.0);
             sq_dist.sqrt()
         } else {
             0.0
-        }
+        };
+        println!(
+            "Δ: {:?}→{:?}: {:?}",
+            map.id_by_idx(edge_ref.source()),
+            map.id_by_idx(edge_ref.target()),
+            cost
+        );
+        cost
     };
     let resp = astar(
         &map.graph,
@@ -83,7 +86,17 @@ fn main() -> Result<()> {
         |_| 0.0,
     );
 
-    println!("Result: {:?} → {:?}: {:#?}", station_hys, station_cfb, resp);
+    println!("Result: {:?} → {:?}: {:?}", station_hys, station_cfb, resp);
+    if let Some((_dist, path)) = resp {
+        for idx in path {
+            println!(
+                "{:?}\t{:?}\t{:?}",
+                idx,
+                map.id_by_idx(idx),
+                map.obj_by_idx(idx)
+            );
+        }
+    }
 
     // let mut visit = Dfs::new(&map.graph, src_idx);
     // println!("Start: {:?}", map.obj_by_idx(src_idx));
@@ -133,7 +146,6 @@ impl Map {
     fn add_node(&mut self, node: Node) {
         let vid = self.index(node.id);
         println!("{:?}[{:?}]: {:?}", node.id, vid, node.tags);
-        self.osm_id_by_vertex.insert(vid, node.id.into());
         self.nodes.insert(node.id, node);
     }
 
@@ -146,6 +158,7 @@ impl Map {
             w.tags,
             w.nodes
         );
+
         for node_id in w.nodes.iter().cloned() {
             println!("{:?} -- {:?}", OsmId::from(w.id), OsmId::from(node_id));
             let n_idx = self.index(node_id);
@@ -178,10 +191,13 @@ impl Map {
         let Self {
             graph,
             vertex_by_osm_id,
+            osm_id_by_vertex,
             ..
         } = self;
-        *vertex_by_osm_id
-            .entry(osm_id)
-            .or_insert_with(|| graph.add_node(osm_id))
+        *vertex_by_osm_id.entry(osm_id).or_insert_with(|| {
+            let idx = graph.add_node(osm_id);
+            osm_id_by_vertex.insert(idx, osm_id);
+            idx
+        })
     }
 }
