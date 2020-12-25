@@ -88,3 +88,7 @@ ALTER TABLE ONLY osm_rel_members
 --     ADD CONSTRAINT osm_rel_members_member_rel_id_fkey FOREIGN KEY (member_rel_id) REFERENCES osm_rels(rel_id);
 -- ALTER TABLE ONLY osm_rel_members
 --     ADD CONSTRAINT osm_rel_members_member_way_id_fkey FOREIGN KEY (member_way_id) REFERENCES osm_ways(way_id);
+
+CREATE INDEX osm_nodes_tags_idx ON osm_nodes USING gin (tags);
+CREATE INDEX osm_ways_tags_idx ON osm_ways USING gin (tags);
+CREATE INDEX osm_rels_tags_idx ON osm_rels USING gin (tags);
