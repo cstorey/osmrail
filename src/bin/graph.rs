@@ -10,7 +10,7 @@ use osmpbfreader::{
 };
 use petgraph::{
     algo::astar,
-    graph::{EdgeReference, NodeIndex, UnGraph},
+    graph::{NodeIndex, UnGraph},
     visit::EdgeRef,
 };
 use smartstring::alias::String;
@@ -48,63 +48,90 @@ fn main() -> Result<()> {
     // let se_mainline = RelationId(4860731);
     // let bmn_shuttle = RelationId(168686);
 
-    let station_hys = NodeId(7159246417);
-    let station_cfb = NodeId(5883033866);
+    let _hys = NodeId(7159246417);
+    let _wwi = NodeId(5883033870);
+    let _edn = NodeId(5883033871);
+    let _ele = NodeId(5883033872);
 
-    let src_idx = *map.vertex_by_osm_id.get(&station_hys.into()).expect("hys");
-    let dst_idx = *map.vertex_by_osm_id.get(&station_cfb.into()).expect("cfb");
+    let _cfb = NodeId(5883033866);
+    let rt = [_hys, _wwi, _edn, _ele];
 
-    println!();
+    for (src, dst) in rt.iter().cloned().zip(rt.iter().cloned().skip(1)) {
+        let src_idx = *map.vertex_by_osm_id.get(&src.into()).expect("hys");
+        let dst_idx = *map.vertex_by_osm_id.get(&dst.into()).expect("cfb");
 
-    let edge_cost = |edge_ref: EdgeReference<_>| {
-        let aid = map
-            .obj_by_idx(edge_ref.source())
-            .and_then(|obj| obj.node().cloned());
-        let bid = map
-            .obj_by_idx(edge_ref.target())
-            .and_then(|obj| obj.node().cloned());
-        let cost = if let Some((a, b)) = aid.zip(bid) {
-            // Technically, we should be calculating these on a spheroid… but this will do for now, I guess.
-            let sq_dist = (a.lat() - b.lat()).powf(2.0) + (a.lon() - b.lon()).powf(2.0);
-            sq_dist.sqrt()
-        } else {
-            0.0
-        };
-        println!(
-            "Δ: {:?}→{:?}: {:?}",
-            map.id_by_idx(edge_ref.source()),
-            map.id_by_idx(edge_ref.target()),
-            cost
-        );
-        cost
-    };
-    let resp = astar(
-        &map.graph,
-        src_idx,
-        |idx| idx == dst_idx,
-        edge_cost,
-        |_| 0.0,
-    );
+        println!();
 
-    println!("Result: {:?} → {:?}: {:?}", station_hys, station_cfb, resp);
-    if let Some((_dist, path)) = resp {
-        for idx in path {
-            println!(
-                "{:?}\t{:?}\t{:?}",
-                idx,
-                map.id_by_idx(idx),
-                map.obj_by_idx(idx)
-            );
+        // let edge_cost_node_dist = |edge_ref: EdgeReference<_>| {
+        //     let aid = map
+        //         .obj_by_idx(edge_ref.source())
+        //         .and_then(|obj| obj.node().cloned());
+        //     let bid = map
+        //         .obj_by_idx(edge_ref.target())
+        //         .and_then(|obj| obj.node().cloned());
+        //     let cost = if let Some((a, b)) = aid.zip(bid) {
+        //         // Technically, we should be calculating these on a spheroid… but this will do for now, I guess.
+        //         let sq_dist = (a.lat() - b.lat()).powf(2.0) + (a.lon() - b.lon()).powf(2.0);
+        //         sq_dist.sqrt()
+        //     } else {
+        //         0.0
+        //     };
+        //     println!(
+        //         "Δ: {:?}→{:?}: {:?}",
+        //         map.id_by_idx(edge_ref.source()),
+        //         map.id_by_idx(edge_ref.target()),
+        //         cost
+        //     );
+        //     cost
+        // };
+        fn score_node_id(obj_id: OsmId) -> f64 {
+            match obj_id {
+                OsmId::Relation(_) => 1.0,
+                OsmId::Way(_) => 2.0,
+                OsmId::Node(_) => 4.0,
+            }
         }
-    }
+        let resp = astar(
+            &map.graph,
+            src_idx,
+            |idx| idx == dst_idx,
+            |e| {
+                let aid = map.id_by_idx(e.source()).expect("a");
+                let bid = map.id_by_idx(e.target()).expect("b");
+                score_node_id(aid) + score_node_id(bid)
+            },
+            |_| 0.0,
+        );
 
-    // let mut visit = Dfs::new(&map.graph, src_idx);
-    // println!("Start: {:?}", map.obj_by_idx(src_idx));
-    // while let Some(node_idx) = visit.next(&map.graph) {
-    //     if let Some(osm_id) = map.id_by_idx(node_idx) {
-    //         println!("Found: {:?} / {:?}", osm_id, map.obj_by_idx(node_idx));
-    //     }
-    // }
+        // let resp = dijkstra(
+        //     &map.graph,
+        //     src_idx,
+        //      Some(dst_idx),
+        //     |_edge_ref| 1);
+
+        println!("Result: {:?} → {:?}: {:?}", src, dst, resp);
+        if let Some((_dist, path)) = resp {
+            for idx in path {
+                // Nb. We filter out any and all objects that don't have a
+                // railway or public_transport tag, so we might end up without
+                // a node to show here.
+                println!(
+                    "{:?}\t{:?}\t{:?}",
+                    idx,
+                    map.id_by_idx(idx),
+                    map.obj_by_idx(idx)
+                );
+            }
+        }
+
+        // let mut visit = Dfs::new(&map.graph, src_idx);
+        // println!("Start: {:?}", map.obj_by_idx(src_idx));
+        // while let Some(node_idx) = visit.next(&map.graph) {
+        //     if let Some(osm_id) = map.id_by_idx(node_idx) {
+        //         println!("Found: {:?} / {:?}", osm_id, map.obj_by_idx(node_idx));
+        //     }
+        // }
+    }
 
     Ok(())
 }
@@ -114,9 +141,17 @@ impl Map {
         let mut map = Map::default();
 
         fn is_relevant(tags: &Tags) -> bool {
-            tags.contains_key("railway") || tags.contains_key("public_transport")
+            tags.contains_key("railway")
+                || tags.contains_key("public_transport")
+                || tags.get("route") == Some(&"train".into())
         }
 
+        // for block in pbf.primitive_blocks() {
+        //     let block = block.context("Read block")?;
+        //     // let _ : PrimitiveBlock = block;
+        //     println!("{:#?}", block);
+        //     println!("---");
+        // }
         for it in pbf.iter() {
             let it = it.context("Read item")?;
             if is_relevant(it.tags()) {
@@ -145,7 +180,14 @@ impl Map {
 
     fn add_node(&mut self, node: Node) {
         let vid = self.index(node.id);
-        println!("{:?}[{:?}]: {:?}", node.id, vid, node.tags);
+        println!(
+            "{:?}[{:?}]: {:?}, {},{}",
+            node.id,
+            vid,
+            node.tags,
+            node.lat(),
+            node.lon()
+        );
         self.nodes.insert(node.id, node);
     }
 

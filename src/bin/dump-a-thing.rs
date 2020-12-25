@@ -25,19 +25,40 @@ fn main() -> Result<()> {
 
 fn print(depth: usize, id: OsmId, data: &BTreeMap<OsmId, OsmObj>) {
     if let Some(val) = data.get(&id) {
-        println!("{:width$}{:?}\t{:?}", "", id, val, width = depth * 2);
+        print!("{:width$}", "", width = depth * 2);
+        match id {
+            OsmId::Node(id) => print!("N{:<14}\t", id.0),
+            OsmId::Way(id) => print!("W{:<14}\t", id.0),
+            OsmId::Relation(id) => print!("R{:<14}\t", id.0),
+        };
+        for (i, (k, v)) in val.tags().iter().enumerate() {
+            if i > 0 {
+                print!(" ");
+            }
+            print!("{}={}", k, v);
+        }
+        print!(";");
+
         match val {
             OsmObj::Relation(rel) => {
+                // println!("{:width$}{:?}\t{:?}", "", id, val, width = depth * 2);
+                println!();
+
                 for child in rel.refs.iter() {
                     print(depth + 1, child.member, data)
                 }
             }
             OsmObj::Way(way) => {
+                // println!("{:width$}{:?}\t{:?}", "", id, val, width = depth * 2);
+
+                println!();
                 for child in way.nodes.iter() {
                     print(depth + 1, child.clone().into(), data)
                 }
             }
-            _ => (),
+            OsmObj::Node(node) => {
+                println!("\t{:06},{:06}", node.lat(), node.lon());
+            }
         }
     }
 }
