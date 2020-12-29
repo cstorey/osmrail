@@ -16,5 +16,6 @@ petgraph = "0.5.1"
 smartstring = "0.2.6"
 csv = "1.1.5"
 serde_json = "1.0.60"
+im = "15.0.0"
 [profile.release]
 debug = 1
